@@ -1,11 +1,11 @@
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class SkillDetection:
     """Result of detecting a skill."""
+
     name: str
     category: str
     confidence: float
@@ -105,7 +105,7 @@ class SkillExtractor:
         "ansible": 0.85,
     }
 
-    def extract_skills(self, text: str, filename: Optional[str] = None) -> list[SkillDetection]:
+    def extract_skills(self, text: str, filename: str | None = None) -> list[SkillDetection]:
         """
         Extract skills from source code or documentation text.
 
@@ -116,7 +116,7 @@ class SkillExtractor:
         Returns:
             List of detected skills with confidence scores
         """
-        detected_skills = {}
+        detected_skills: dict[str, SkillDetection] = {}
 
         # Detect languages first
         self._detect_languages(text, filename, detected_skills)
@@ -143,7 +143,7 @@ class SkillExtractor:
     def _detect_languages(
         self,
         text: str,
-        filename: Optional[str],
+        filename: str | None,
         skills_dict: dict,
     ) -> None:
         """Detect programming languages."""
@@ -172,18 +172,52 @@ class SkillExtractor:
 
         # JavaScript/TypeScript detection
         js_evidence = []
-        if ".js" in str(filename or "").lower():
+        has_js = ".js" in str(filename or "").lower()
+        has_ts = ".ts" in str(filename or "").lower()
+        if has_js:
             js_evidence.append("JavaScript file extension (.js)")
-        if ".ts" in str(filename or "").lower():
+        if has_ts:
             js_evidence.append("TypeScript file extension (.ts)")
-        if re.search(r"\b(import|require)\s+", text):
+
+        # Scan the text body for in-text file extension mentions
+        # (e.g. "index.js", "app.tsx"). Requires a word character before the
+        # dot so plain words ending in ".js" (e.g. "ASAP.js") are less likely
+        # to false-match, and a trailing word boundary so ".js" does not
+        # swallow ".jsx".
+        intext_exts = {m.group(1).lower() for m in re.finditer(r"\w+\.(js|jsx|ts|tsx)\b", text)}
+        js_intext = {ext for ext in intext_exts if ext in ("js", "jsx")}
+        ts_intext = {ext for ext in intext_exts if ext in ("ts", "tsx")}
+        if js_intext:
+            has_js = True
+            js_evidence.append(
+                "JavaScript file extension in text ("
+                + ", ".join(sorted("." + e for e in js_intext))
+                + ")"
+            )
+        if ts_intext:
+            has_ts = True
+            js_evidence.append(
+                "TypeScript file extension in text ("
+                + ", ".join(sorted("." + e for e in ts_intext))
+                + ")"
+            )
+
+        # Language name mentioned literally in the text (case-insensitive).
+        if "javascript" in text_lower:
+            has_js = True
+            js_evidence.append("'JavaScript' mentioned in text")
+        if "typescript" in text_lower:
+            has_ts = True
+            js_evidence.append("'TypeScript' mentioned in text")
+
+        if re.search(r"\b(import|require)\s*\(?", text):
             js_evidence.append("CommonJS or ES6 imports")
         if "package.json" in text_lower:
             js_evidence.append("package.json found")
 
         if js_evidence:
             confidence = min(0.95, 0.6 + len(js_evidence) * 0.1)
-            lang = "TypeScript" if ".ts" in str(filename or "").lower() else "JavaScript"
+            lang = "TypeScript" if has_ts else "JavaScript"
             skills_dict[lang] = SkillDetection(
                 name=lang,
                 category="Language",
