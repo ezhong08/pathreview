@@ -43,7 +43,7 @@ regressing the Python and database detection that already works.
 **Reproduction commit link:** https://github.com/ezhong08/pathreview/commit/6a4895095da11530763975ed1cab5ade463892a1
 
 **Reproduction summary:**
-Based on the issue created a local test file `test_local.py` which calls `SkillExtractor.extract_skills()` with a JavaScript description (`Wrote index.js using const arrow functions and async/await callbacks`) and a TypeScript description (`Built app.tsx and types.ts with strict TypeScript interfaces`). Running the script via `.venv\Scripts\python.exe` returned `[]` for the JS input (no skills detected) and `['React']` for the TS input (TypeScript undetected, only React matched via `.tsx` in the React indicator list). This confirms the core issue: language detection relies only on the `filename` parameter for `.js`/`.ts` extensions and never scans the text itself for in-line file extensions, language keywords, or the technology names "JavaScript" and "TypeScript".
+Based on the issue created a local test file which calls `SkillExtractor.extract_skills()` with a JavaScript description (`Wrote index.js using const arrow functions and async/await callbacks`) and a TypeScript description (`Built app.tsx and types.ts with strict TypeScript interfaces`). Running the script via `.venv\Scripts\python.exe` returned `[]` for the JS input (no skills detected) and `['React']` for the TS input (TypeScript undetected, only React matched via `.tsx` in the React indicator list). This confirms the core issue: language detection relies only on the `filename` parameter for `.js`/`.ts` extensions and never scans the text itself for in-line file extensions, language keywords, or the technology names "JavaScript" and "TypeScript".
 
 **PLAN.md link:** https://github.com/ezhong08/pathreview/blob/fix/148-detect-javascript-typescript/PLAN.md
 
@@ -75,7 +75,7 @@ None. Note: `test_database_technology_detection` fails due to a pre-existing bug
 
 ### Check-in 2 (end of week)
 
-**PR link:** [link to your submitted pull request]
+**PR link:** https://github.com/ascherj/pathreview/pull/518
 
 **Branch:** fix/148-detect-javascript-typescript
 
@@ -83,7 +83,7 @@ None. Note: `test_database_technology_detection` fails due to a pre-existing bug
 Taught `_detect_languages()` and `_detect_tools()` in `ingestion/parsers/skill_extractor.py` to inspect the text body itself instead of relying on the `filename` argument. Language detection now scans for in-text file extensions (`.js`/`.jsx`/`.ts`/`.tsx`), the literal words "JavaScript"/"TypeScript", JS-only keywords (`const`/`let`/`var`/`export`/`function` with a ≥2 unique-keyword threshold so Python-overlapping keywords don't false-trigger), and TypeScript-specific syntax (`interface`/`type`/`enum` declarations and typed annotations like `: string`); tool detection now recognizes Dockerfile instructions (`FROM`/`RUN`/`CMD`/`EXPOSE`/`ENTRYPOINT`) and docker-compose keys (`version:`/`services:`/`build:`/`ports:`) that never contain the literal word "docker". Along the way I tightened two regexes to kill false positives — the bare `import` pattern now requires JS-specific forms (`require(`, `import…from`, `import {`) so Python `import os` no longer reads as JavaScript, and the Python annotation pattern gained a `\b` so `id: string` no longer matches `str`.
 
 **Tests added or updated:**
-No new tests were needed — the fix is validated against the existing suite in `tests/unit/test_skill_extractor.py`, whose four previously-failing cases now pass: `test_javascript_detection` (JS from `require('fs')`), `test_text_with_typescript_files` (TS from `interface`/typed annotations), `test_devops_tool_detection` (Docker from Dockerfile `FROM`/`RUN`/`EXPOSE`), and `test_docker_compose_detection` (Docker from compose `version:`/`services:`). The Python and mixed-language tests continue to pass, confirming no regressions. `tests/unit/test_local.py` (the Week 8 reproduction script) now returns `['JavaScript']` and `['TypeScript', 'React']` for its two inputs instead of `[]` and `['React']`. One pre-existing failure remains untouched and out of scope: `test_database_technology_detection` references `skill_names` before it is assigned.
+No new tests were needed — the fix is validated against the existing suite in `tests/unit/test_skill_extractor.py`, whose four previously-failing cases now pass: `test_javascript_detection` (JS from `require('fs')`), `test_text_with_typescript_files` (TS from `interface`/typed annotations), `test_devops_tool_detection` (Docker from Dockerfile `FROM`/`RUN`/`EXPOSE`), and `test_docker_compose_detection` (Docker from compose `version:`/`services:`). One pre-existing failure remains untouched and out of scope: `test_database_technology_detection` references `skill_names` before it is assigned.
 
 **Self-review confirmation:** [X] make check passes [X] make test-unit passes
 
