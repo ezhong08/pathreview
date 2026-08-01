@@ -157,7 +157,7 @@ class SkillExtractor:
             python_evidence.append("Python import statements")
         if re.search(r"\bdef\s+\w+\s*\(", text):
             python_evidence.append("Python function definitions")
-        if re.search(r":\s*(int|str|float|bool|list|dict)", text):
+        if re.search(r":\s*(int|str|float|bool|list|dict)\b", text):
             python_evidence.append("Python type annotations")
         if "requirements.txt" in text_lower:
             python_evidence.append("requirements.txt found")
@@ -210,10 +210,43 @@ class SkillExtractor:
             has_ts = True
             js_evidence.append("'TypeScript' mentioned in text")
 
-        if re.search(r"\b(import|require)\s*\(?", text):
+        # JS/ES6/CommonJS imports only. A bare `import <name>` also matches
+        # Python, so require JS-specific forms: `require(`, `import ... from`,
+        # `import {`, or a side-effect `import '...'`.
+        if re.search(
+            r"\brequire\s*\(|\bimport\b[^\n]*\bfrom\b|\bimport\s*\{|\bimport\s*['\"]",
+            text,
+        ):
             js_evidence.append("CommonJS or ES6 imports")
         if "package.json" in text_lower:
             js_evidence.append("package.json found")
+
+        # JS-specific keyword detection. Exclude keywords that also appear in
+        # Python (import, async, await, class) to avoid false positives on
+        # Python code. Require >= 2 unique JS-only keywords before treating
+        # keyword evidence as a JS/TS signal.
+        js_only_keywords = self.JS_TS_KEYWORDS - self.PYTHON_KEYWORDS
+        found_js_keywords = {
+            kw for kw in js_only_keywords if re.search(rf"\b{re.escape(kw)}\b", text)
+        }
+        if len(found_js_keywords) >= 2:
+            js_evidence.append("JavaScript keywords (" + ", ".join(sorted(found_js_keywords)) + ")")
+
+        # TypeScript-specific syntax. These constructs (interface/type/enum
+        # declarations and typed annotations like ": string") do not appear in
+        # plain JavaScript or Python, so they are strong TypeScript signals.
+        ts_signals = []
+        if re.search(r"\binterface\s+\w+", text):
+            ts_signals.append("interface declaration")
+        if re.search(r"\btype\s+\w+\s*=", text):
+            ts_signals.append("type alias")
+        if re.search(r"\benum\s+\w+", text):
+            ts_signals.append("enum declaration")
+        if re.search(r":\s*(string|number|boolean)\b", text):
+            ts_signals.append("TypeScript type annotations")
+        if ts_signals:
+            has_ts = True
+            js_evidence.append("TypeScript syntax (" + ", ".join(ts_signals) + ")")
 
         if js_evidence:
             confidence = min(0.95, 0.6 + len(js_evidence) * 0.1)
@@ -308,3 +341,26 @@ class SkillExtractor:
                         confidence=confidence,
                         evidence=[f"Found '{tool}' reference in content"],
                     )
+
+        # Docker detection from file contents that never mention "docker".
+        # Dockerfile instructions and docker-compose keys are matched at the
+        # start of a line (case-insensitive, ignoring leading indentation).
+        docker_evidence = []
+        if re.search(
+            r"(?im)^\s*(FROM|RUN|CMD|EXPOSE|ENTRYPOINT|COPY|WORKDIR)\s+",
+            text,
+        ):
+            docker_evidence.append("Dockerfile instructions")
+        if re.search(
+            r"(?im)^\s*(version|services|build|ports|image)\s*:",
+            text,
+        ):
+            docker_evidence.append("docker-compose keys")
+
+        if docker_evidence and "Docker" not in skills_dict:
+            skills_dict["Docker"] = SkillDetection(
+                name="Docker",
+                category="Tool",
+                confidence=0.85,
+                evidence=docker_evidence,
+            )
