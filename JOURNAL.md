@@ -88,3 +88,86 @@ No new tests were needed — the fix is validated against the existing suite in 
 **Self-review confirmation:** [X] make check passes [X] make test-unit passes
 
 **Draft PR feedback received from:** none
+
+## Week 10 — Iteration & reflection
+
+### Reviewer feedback
+
+**Feedback received:** [ ] Yes [X] No — still awaiting review
+
+**Summary of feedback:**
+No review came in.
+
+**How you responded:**
+
+---
+
+### Reflection
+
+**What was harder than you expected?**
+The hard part wasn't making the four failing tests pass — it was making them pass without
+breaking anything else. My first version of the import fix in check-in 1 was
+`r"\b(import|require)\s*\(?"`, which passed `test_javascript_detection` and looked
+finished, but that pattern also matches Python's `import os`, so any Python file would
+have been tagged as JavaScript. The same thing bit me a second time with the pre-existing
+Python annotation regex `r":\s*(int|str|float|bool|list|dict)"`: once I started detecting
+TypeScript annotations, `id: string` matched `str` inside "string" and my TypeScript
+sample came back as Python too. Adding a `\b` fixed it, but I only found it because a
+different test failed — I hadn't predicted either problem while planning.
+
+The other surprise was purely mechanical: I could not get my first commit to go through.
+This repo's `.pre-commit-config.yaml` runs `ruff --fix`, `black`, and `mypy` on commit, and
+the first two don't just complain — they rewrite the file in place and then fail the hook.
+So `git commit` would error out, and once I dismissed the error the same file I had just
+staged was sitting in the unstaged section again, because the hook's reformatted version no
+longer matched the snapshot I'd added. It looked like my changes were being lost; they
+weren't, and the fix was just to `git add` the reformatted file and commit again. Two edits
+in my final diff aren't even mine — `Optional[str]` became `str | None` (ruff) and a blank
+line appeared after the `SkillDetection` docstring (black). My editor's Prettier on save
+made this worse on the markdown files, since it would re-wrap `PLAN.md` and this journal
+after I'd staged them and kick off the same cycle. Learning to let the hooks win instead of
+fighting them was its own small lesson.
+
+**What did you learn about working in a large codebase?**
+In my own projects I change whatever I want; here `skill_extractor.py` is one heuristic in
+an ingestion pipeline other code depends on, so the constraint was "don't move anything
+that already works." Concretely, `JS_TS_KEYWORDS` and `PYTHON_KEYWORDS` were already
+defined in the class and unused by the detection path, which told me the original author
+had intended keyword-based detection and I should build on that rather than invent my own
+list — my fix ended up being `self.JS_TS_KEYWORDS - self.PYTHON_KEYWORDS`. I also learned
+to leave things alone: `test_database_technology_detection` fails on
+`skill_names = [s.name for s in skill_names]`, a real bug in the test that references the
+variable before it's assigned. It was tempting to fix a one-line typo, but it's unrelated
+to issue #148, so I documented it in the PR and left it out of scope.
+
+**How did AI tools help — and where did they fall short?**
+AI was most useful for orientation and for mechanical work: finding where
+`_detect_languages()` was called from, drafting the regexes, and structuring PLAN.md into
+steps I could check off. Where it fell short was judgment about _this_ codebase. It would
+happily generate a broad pattern that made the target test green without asking what else
+in the repo that pattern would sweep up — the `import os` false positive came out of an
+AI-suggested regex that I accepted too quickly. The decisions I had to make myself were
+the ones with tradeoffs: choosing a ≥2 unique-keyword threshold rather than 1 (so a lone
+`function` in prose doesn't count), requiring `\w+` before `.js` so a stray "ASAP.js"
+doesn't match, and deciding the database test bug was out of scope. AI can tell you what
+a regex does; it can't tell you how aggressive you're allowed to be in someone else's
+pipeline.
+
+**What would you do differently if you started over?**
+I would run the full unit suite after every single sub-step instead of only checking the
+test I was targeting. In check-in 1 I reported "no regressions" based on the Python and
+mixed-language tests, and the `import`/`str` false positives were sitting there the whole
+time — a full run per step would have surfaced them days earlier and in isolation, instead
+of as two tangled failures at the end. I'd also broaden my reproduction script earlier: I
+started with two inputs (a JS description and a TS description), when what I actually
+needed was a small table of inputs including _negative_ cases like a plain Python snippet
+that must **not** be detected as JavaScript. Finally, I'd have asked for a draft PR review
+mid-week rather than submitting and waiting.
+
+**What are you most proud of from this module?**
+Catching my own false positives. The assignment's bar was four named tests going green,
+and after check-in 1 I could have stopped at "`test_javascript_detection` passes." Instead
+I asked what my regexes matched **besides** what I wanted, found that Python code would be
+mislabeled as JavaScript, and tightened the import pattern to JS-only forms (`require(`,
+`import … from`, `import {`). That fix isn't visible in any test name — nothing was asking
+me for it — and it's the part of PR #518 I'd defend hardest in review.
